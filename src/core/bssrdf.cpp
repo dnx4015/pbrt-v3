@@ -381,3 +381,161 @@ Float TabulatedBSSRDF::Pdf_Sr(int ch, Float r) const {
     if (rOptical != 0) sr /= 2 * Pi * rOptical;
     return std::max((Float)0, sr * sigma_t[ch] * sigma_t[ch] / rhoEff);
 }
+
+
+Float getRealDr(Normal3f n, Float zb, Float D, Float sigma_t, Vector3f x, 
+                Vector3f w){
+    Float x_dot_w = Dot(x, w);
+    Float r = x.Length();
+    Float numerator = r * r - x_dot_w * x_dot_w;
+    Float cos_beta = -std::sqrt(numerator / (r * r + zb * zb));
+    Float mu0 = Dot(-n, w);
+    if (mu0 > 0) 
+        return std::sqrt(D * mu0 * (D * mu0 - zb * cos_beta * 2) + r * r);
+    return std::sqrt(1 / (9 * sigma_t * sigma_t) + r * r);
+}
+
+
+Float DirectionalMonopole(Vector3f x, Vector3f w, Float r, Normal3f n, 
+                          Float sigma_tr, Float D, Float eta){
+    Float fm1 = FresnelMoment1(eta), fm2 = FresnelMoment2(eta);
+    Float cPhi = .25f * (1 - 2 * fm1), cE = .5f * (1 - 3 * fm2);
+
+    Float str_r = sigma_tr * r;
+    Float str_r_one = str_r + 1;
+
+    Float x_dot_w = Dot(x, w);
+    Float r_sqr = r * r;
+	
+    Float t0 = (1 / (4 * Pi)) * std::exp(-str_r) / (r * r_sqr);
+    Float t1 = r_sqr / D + 3 * str_r_one * x_dot_w;
+    Float t2 = 3 * D * str_r_one * Dot(w, n);
+    Float t3 = (str_r_one + 3 * D * (3 * str_r_one + str_r * str_r) 
+               / r_sqr * x_dot_w) * Dot(x, n);
+    return t0 * (cPhi * t1 - cE * (t2 - t3));
+}
+
+
+Float DirectionalDipole(Float sigma_a, Float sigma_s, Float g, Float eta, 
+                        Point3f xi, Point3f xo, Vector3f wi, Normal3f ni, 
+                        Normal3f no){
+    // Compute reduced scattering coefficients $\sigmaps, \sigmapt$ and albedo
+    // $\rhop$
+    Float sigma_t = sigma_a + sigma_s;
+    Float sigmap_s = sigma_s * (1 - g);
+    Float sigmap_t = sigma_a + sigmap_s;
+    Float rhop = sigmap_s / sigmap_t;
+
+    // Compute non-classical diffusion coefficient $D_\roman{G}$ using
+    // Equation (15.24)
+    Float D_g = (2 * sigma_a + sigmap_s) / (3 * sigmap_t * sigmap_t);
+
+    // Compute effective transport coefficient $\sigmatr$ based on $D_\roman{G}$
+    Float sigma_tr = std::sqrt(sigma_a / D_g);
+
+    // Determine linear extrapolation distance $\depthextrapolation$ using
+    // Equation (15.28)
+    Float fm1 = FresnelMoment1(eta), fm2 = FresnelMoment2(eta);
+    Float zb = 2 * D_g * (1 + 3 * fm2) / (1 - 2 * fm1);
+
+    Normal3f ni_ast = xo == xi ? ni : 
+        Normal3f(Cross(Normalize(xo-xi), Normalize(Cross(ni, xo-xi))));
+    Vector3f wr = -1.0 * wi;
+    Vector3f wv = Reflect(wv, ni_ast);
+    Float dr = getRealDr(no, zb, D_g, sigma_t, xo-xi, wr);
+    Float kappa = 1 - std::exp(-sigma_t * dr);
+ 
+    Vector3f xoxv = xo - (xi + Vector3f(ni_ast * (2 * zb)));
+    Float dv = xoxv.Length();
+
+    Float positiveMonopole = DirectionalMonopole(xo-xi, wr, dr, no, sigma_tr, D_g, eta);
+    Float negativeMonopole = DirectionalMonopole(xoxv, wv, dv, no, sigma_tr, D_g, eta);
+    return rhop * kappa * (positiveMonopole - negativeMonopole);    
+}
+
+Float DirectionalMultipole(Float sigma_a, Float sigma_s, Float g, Float eta, 
+                           Point3f xi, Point3f xo, Vector3f wi, Normal3f ni, 
+                           Normal3f no){
+    // Compute reduced scattering coefficients $\sigmaps, \sigmapt$ and albedo
+    // $\rhop$
+    Float sigma_t = sigma_a + sigma_s;
+    Float sigmap_s = sigma_s * (1 - g);
+    Float sigmap_t = sigma_a + sigmap_s;
+
+    // Compute non-classical diffusion coefficient $D_\roman{G}$ using
+    // Equation (15.24)
+    Float D_g = (2 * sigma_a + sigmap_s) / (3 * sigmap_t * sigmap_t);
+
+    // Compute effective transport coefficient $\sigmatr$ based on $D_\roman{G}$
+    Float sigma_tr = std::sqrt(sigma_a / D_g);
+
+    // Determine linear extrapolation distance $\depthextrapolation$ using
+    // Equation (15.28)
+    Float fm1 = FresnelMoment1(eta), fm2 = FresnelMoment2(eta);
+    Float zb = 2 * D_g * (1 + 3 * fm2) / (1 - 2 * fm1);
+
+    Normal3f ni_ast = xo == xi ? ni : 
+        Normal3f(Cross(Normalize(xo-xi), Normalize(Cross(ni, xo-xi))));
+    Vector3f wr = -1.0 * wi;
+    Vector3f wv = Reflect(wv, ni_ast);
+    
+    Point3f xr0 = xi;
+    Float dr0 = getRealDr(no, zb, D_g, sigma_t, xo-xi, wr);
+    Float d = Distance(xi, xo);
+ 
+    int nSamples = 100;
+    Float totalRadiance = 0;
+    for(int i = 0; i < nSamples; ++i){
+	    Point3f xr = xr0 + Vector3f((2 * i * (d + 2*zb)) * ni_ast);
+	    Point3f xv = -xr0 + Vector3f((2 * i * (d + 2*zb) - 2 * zb) * ni_ast);
+        Vector3f xoxr = xo - xr;
+        Vector3f xoxv = xo - xv;
+        Float dr = i == 0 ? dr0 : xoxr.Length(); 
+        Float dv = xoxv.Length();
+
+    	Float posMonopole = DirectionalMonopole(xoxr, wr, dr, no, sigma_tr, D_g, eta);
+    	Float negMonopole = DirectionalMonopole(xoxv, wv, dv, no, sigma_tr, D_g, eta);
+       	totalRadiance += (posMonopole - negMonopole); 
+    }
+    return totalRadiance;
+}
+
+Spectrum DirectionalBSSRDF::S(const SurfaceInteraction &pi, const Vector3f &wi) const {
+    Spectrum radiance;
+    for (int c = 0; c < Spectrum::nSamples; ++c)
+        radiance[c] = DirectionalDipole(sigma_a[c], sigma_s[c], g, eta, pi.p, po.p, wi, pi.n, po.n);
+}
+
+
+/*
+Spectrum DirectionalBSSRDF::Sp(const SurfaceInteraction &pi) const {
+    return DirectionalDipole(sigma_a, sigma_s, g, eta, pi.p, po.p, wi, pi.n, po.n);
+}
+
+Spectrum DirectionalBSSRDF::Sample_S(const Scene &scene, Float u1, const Point2f &u2,
+                       		     MemoryArena &arena, SurfaceInteraction *si,
+                                     Float *pdf) const {
+    //available po, eta, material, mode
+    ProfilePhase pp(Prof::BSSRDFEvaluation);
+    Spectrum Sp = Sample_Sp(scene, u1, u2, arena, si, pdf);
+    if (!Sp.IsBlack()) {
+        // Initialize material model at sampled surface interaction
+        si->bsdf = ARENA_ALLOC(arena, BSDF)(*si);
+        si->bsdf->Add(ARENA_ALLOC(arena, SeparableBSSRDFAdapter)(this));
+        si->wo = Vector3f(si->shading.n);
+    }
+    return Sp;
+}
+
+Spectrum DirectionalBSSRDF::Sample_Sp(const Scene &scene, Float u1, const Point2f &u2,
+                       		MemoryArena &arena, SurfaceInteraction *si,
+                       		Float *pdf) const {
+    //available po, eta, material, mode
+    //
+}
+
+Spectrum DirectionalBSSRDF::Pdf_Sp(const SurfaceInteraction &si) const {
+    //available po, eta, material, mode
+    //
+}
+*/

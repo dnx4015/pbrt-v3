@@ -51,18 +51,30 @@ Float FresnelMoment2(Float invEta);
 class BSSRDF {
   public:
     // BSSRDF Public Methods
-    BSSRDF(const SurfaceInteraction &po, Float eta) : po(po), eta(eta) {}
+    BSSRDF(const SurfaceInteraction &po, Float eta, Float g = 0.0f,
+           const Spectrum &sigma_a = Spectrum(0), 
+           const Spectrum sigma_s = Spectrum(0)) : 
+           po(po), eta(eta), g(g), sigma_a(sigma_a), sigma_s(sigma_s){}
 
     // BSSRDF Interface
-    virtual Spectrum S(const SurfaceInteraction &pi, const Vector3f &wi) = 0;
+    virtual Spectrum S(const SurfaceInteraction &pi, const Vector3f &wi) const = 0;
     virtual Spectrum Sample_S(const Scene &scene, Float u1, const Point2f &u2,
                               MemoryArena &arena, SurfaceInteraction *si,
                               Float *pdf) const = 0;
 
+    Float Eta() const { return eta; }
+    Float G() const { return g; }
+    Spectrum Sigma_a() const { return sigma_a; }
+    Spectrum Sigma_s() const { return sigma_s; }
+    Spectrum Sigma_t() const { return sigma_t; }
+    Float Sigma_aCh(const int &ch) const { return sigma_a[ch]; }
+    Float Sigma_sCh(const int &ch) const { return sigma_s[ch]; }
+    Float Sigma_tCh(const int &ch) const { return sigma_t[ch]; }
   protected:
     // BSSRDF Protected Data
     const SurfaceInteraction &po;
-    Float eta;
+    Float eta, g;
+    Spectrum sigma_a, sigma_s, sigma_t, rho;
 };
 
 class SeparableBSSRDF : public BSSRDF {
@@ -71,14 +83,17 @@ class SeparableBSSRDF : public BSSRDF {
   public:
     // SeparableBSSRDF Public Methods
     SeparableBSSRDF(const SurfaceInteraction &po, Float eta,
-                    const Material *material, TransportMode mode)
-        : BSSRDF(po, eta),
+                    const Material *material, TransportMode mode, 
+                    Float g = 0.0f,
+                    const Spectrum &sigma_a = Spectrum(0), 
+                    const Spectrum sigma_s = Spectrum(0))
+        : BSSRDF(po, eta, g, sigma_a, sigma_s),
           ns(po.shading.n),
           ss(Normalize(po.shading.dpdu)),
           ts(Cross(ns, ss)),
           material(material),
           mode(mode) {}
-    Spectrum S(const SurfaceInteraction &pi, const Vector3f &wi) {
+    Spectrum S(const SurfaceInteraction &pi, const Vector3f &wi) const {
         ProfilePhase pp(Prof::BSSRDFEvaluation);
         Float Ft = FrDielectric(CosTheta(po.wo), 1, eta);
         return (1 - Ft) * Sp(pi) * Sw(wi);
@@ -110,6 +125,32 @@ class SeparableBSSRDF : public BSSRDF {
     const Material *material;
     const TransportMode mode;
 };
+
+
+class DirectionalBSSRDF : public SeparableBSSRDF {
+  public:
+    // DirectionalBSSRDF Public Methods
+    DirectionalBSSRDF(const SurfaceInteraction &po, const Material *material,
+                    TransportMode mode, Float eta, const Spectrum &sigma_a,
+                    const Spectrum &sigma_s, Float g)
+        : SeparableBSSRDF(po, eta, material, mode, g, sigma_a, sigma_s) {
+            //sigma_a(sigma_a), sigma_s(sigma_s), g(g) {
+        sigma_t = sigma_a + sigma_s;
+        for (int c = 0; c < Spectrum::nSamples; ++c)
+            rho[c] = sigma_t[c]  != 0 ? (sigma_s[c] / sigma_t[c]) : 0;
+    }
+
+    Spectrum S(const SurfaceInteraction &pi, const Vector3f &wi) const;
+    Spectrum Sr(Float distance) const {return Spectrum(0);}
+    Float Pdf_Sr(int ch, Float distance) const {return 0;}
+    Float Sample_Sr(int ch, Float sample) const {return 0;}
+
+  private:
+    // DirectionalBSSRDF Private Data
+    /*Spectrum sigma_a, sigma_s, sigma_t, rho;
+    Float g;*/
+};
+
 
 class TabulatedBSSRDF : public SeparableBSSRDF {
   public:

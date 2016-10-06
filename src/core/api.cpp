@@ -57,6 +57,7 @@
 #include "integrators/mlt.h"
 #include "integrators/path.h"
 #include "integrators/sppm.h"
+#include "integrators/sss_sppm.h"
 #include "integrators/volpath.h"
 #include "integrators/whitted.h"
 #include "lights/diffuse.h"
@@ -76,6 +77,7 @@
 #include "materials/plastic.h"
 #include "materials/substrate.h"
 #include "materials/subsurface.h"
+#include "materials/subsurfaceSPPM.h"
 #include "materials/translucent.h"
 #include "materials/uber.h"
 #include "samplers/halton.h"
@@ -442,6 +444,8 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
         material = CreateSubsurfaceMaterial(mp);
     else if (name == "kdsubsurface")
         material = CreateKdSubsurfaceMaterial(mp);
+    else if (name == "subsurfaceSPPM")
+        material = CreateSubsurfaceSPPMMaterial(mp);
     else if (name == "fourier")
         material = CreateFourierMaterial(mp);
     else {
@@ -1424,6 +1428,8 @@ Integrator *RenderOptions::MakeIntegrator() const {
         integrator = CreateMLTIntegrator(IntegratorParams, camera);
     } else if (IntegratorName == "sppm") {
         integrator = CreateSPPMIntegrator(IntegratorParams, camera);
+    } else if (IntegratorName == "sss_sppm") {
+        integrator = CreateSSS_SPPMIntegrator(IntegratorParams, camera);
     } else {
         Error("Integrator \"%s\" unknown.", IntegratorName.c_str());
         return nullptr;
