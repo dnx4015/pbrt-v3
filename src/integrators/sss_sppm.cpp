@@ -114,7 +114,14 @@ inline unsigned int hash(const Point3i &p, int hashSize) {
 }
 
 Vector3f rotate(Vector3f w, Float theta, Float phi){
-    Normal3f n = Normal3f(1, 1, (-w.x -w.y)/w.z);
+    Normal3f n;
+    if (w.z > 0) {
+        n = Normal3f(1., 1., (-w.x-w.y)/w.z);
+    } else if (w.y > 0) {
+        n = Normal3f(1., (-w.x-w.z)/w.y, 1.);
+    } else {
+        n = Normal3f((-w.y-w.z)/w.x, 1., 1.);
+    }
     Transform rot = Rotate(phi, w);
     n = rot(n);
     return std::cos(theta) * w + Vector3f(std::sin(theta) * n); 
@@ -137,7 +144,9 @@ bool SSS_SPPMIntegrator::traceSubsurfaceScattering(SurfaceInteraction isect,
 
     // TODO: Sample which channel to use
     int ch = 0;
-    for(int depth = 0; depth < maxDepth; ++depth){
+    for(int depth = 0; depth < maxDepth; ++depth) {
+        printf("depth: %d\n", depth);
+        printf("haltonDim: %d\n", haltonDim);
         // Importance sample dis tance until next interaction
         Float xi = RadicalInverse(haltonDim++, haltonIndex);
         Float d = std::log(xi) / bssrdf->Sigma_tCh(ch);
@@ -165,12 +174,15 @@ bool SSS_SPPMIntegrator::traceSubsurfaceScattering(SurfaceInteraction isect,
         
         // Photon is scattered, importance sample direction
         Float g = bssrdf->G();
-        Float gg = g*g;
-        xi = RadicalInverse(haltonDim+1, haltonIndex);
-        Float t = (1 - gg) / (1 - g + 2*g*xi);
-        Float theta = std::acos(1 / (2 * g) * (1 + gg - t*t));
+        xi = RadicalInverse(haltonDim + 1, haltonIndex);
+        Float theta = 2 * Pi * xi;
+        if (g != 0.){
+            Float gg = g*g;
+            Float t = (1 - gg) / (1 - g + 2 * g * xi);
+            theta = std::acos(1 / (2 * g) * (1 + gg - t*t));
+        }
         
-        xi = RadicalInverse(haltonDim+2, haltonIndex);
+        xi = RadicalInverse(haltonDim + 2, haltonIndex);
         Float phi = xi * 2 * Pi;
         wt =  rotate(wt, theta, phi);
         haltonDim += 3;
@@ -491,7 +503,7 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                                                                   &wi, 
                                                                   haltonDim, 
                                                                   haltonIndex,
-                                                                  200);
+                                                                  100);
                         if (absorbed) break;
                     }
                     Spectrum bnew =
