@@ -419,6 +419,14 @@ Float DirectionalMonopole(Vector3f x, Vector3f w, Float r, Normal3f n,
 Float DirectionalDipole(Float sigma_a, Float sigma_s, Float g, Float eta, 
                         Point3f xi, Point3f xo, Vector3f wi, Normal3f ni, 
                         Normal3f no){
+    printf("Sigma a: %.3f, Sigma s: %.3f, g: %.3f, eta: %.3f\n", 
+            sigma_a, sigma_s, g, eta);
+    printf("Punto entrada: %.3f, %.3f, %.3f\n", xi.x, xi.y, xi.z);
+    printf("Punto salida: %.3f, %.3f, %.3f\n", xo.x, xo.y, xo.z);
+    printf("Direccion entrada: %.3f, %.3f, %.3f\n", wi.x, wi.y, wi.z);
+    printf("Direccion normal entrada: %.3f, %.3f, %.3f\n", ni.x, ni.y, ni.z);
+    printf("Direccion normal salida: %.3f, %.3f, %.3f\n", no.x, no.y, no.z);
+    
     // Compute reduced scattering coefficients $\sigmaps, \sigmapt$ and albedo
     // $\rhop$
     Float sigma_t = sigma_a + sigma_s;
@@ -448,8 +456,12 @@ Float DirectionalDipole(Float sigma_a, Float sigma_s, Float g, Float eta,
     Vector3f xoxv = xo - (xi + Vector3f(ni_ast * (2 * zb)));
     Float dv = xoxv.Length();
 
-    Float positiveMonopole = DirectionalMonopole(xo-xi, wr, dr, no, sigma_tr, D_g, eta);
-    Float negativeMonopole = DirectionalMonopole(xoxv, wv, dv, no, sigma_tr, D_g, eta);
+    printf("Before monopole\n");
+    Float positiveMonopole = DirectionalMonopole(xo-xi, wr, dr, no, sigma_tr,
+                                                 D_g, eta);
+    Float negativeMonopole = DirectionalMonopole(xoxv, wv, dv, no, sigma_tr, 
+                                                 D_g, eta);
+    printf("Results: %.3f, %.3f\n", positiveMonopole, negativeMonopole);
     return rhop * kappa * (positiveMonopole - negativeMonopole);    
 }
 
@@ -503,7 +515,8 @@ Float DirectionalMultipole(Float sigma_a, Float sigma_s, Float g, Float eta,
 Spectrum DirectionalBSSRDF::S(const SurfaceInteraction &pi, const Vector3f &wi) const {
     Spectrum radiance;
     for (int c = 0; c < Spectrum::nSamples; ++c)
-        radiance[c] = DirectionalDipole(sigma_a[c], sigma_s[c], g, eta, pi.p, po.p, wi, pi.n, po.n);
+        radiance[c] = DirectionalDipole(sigma_a[c], sigma_s[c], g, eta, pi.p, 
+                                        po.p, wi, pi.n, po.n);
 }
 
 
