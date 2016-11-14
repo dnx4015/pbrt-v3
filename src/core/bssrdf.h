@@ -143,7 +143,7 @@ class DirectionalBSSRDF : public SeparableBSSRDF {
     Spectrum S(const SurfaceInteraction &pi, const Vector3f &wi) const;
     Spectrum Sr(Float distance) const {return Spectrum(0);}
     Float Pdf_Sr(int ch, Float distance) const {return 0;}
-    Float Sample_Sr(int ch, Float sample) const {return 0;}
+    Float Sample_Sr(int ch, Float sample) const;
 
   private:
     // DirectionalBSSRDF Private Data
