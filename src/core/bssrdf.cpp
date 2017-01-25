@@ -35,6 +35,7 @@
 #include "bssrdf.h"
 #include "interpolation.h"
 #include "scene.h"
+#include "sampling.h"
 
 // BSSRDF Utility Functions
 Float FresnelMoment1(Float eta) {
@@ -157,9 +158,10 @@ void ComputeBeamDiffusionBSSRDF(Float g, Float eta, BSSRDFTable *t) {
         // Compute scattering profile for chosen albedo $\rho$
         for (int j = 0; j < t->nRadiusSamples; ++j) {
             Float rho = t->rhoSamples[i], r = t->radiusSamples[j];
-            t->profile[i * t->nRadiusSamples + j] =
-                2 * Pi * r * (BeamDiffusionSS(rho, 1 - rho, g, eta, r) +
-                              BeamDiffusionMS(rho, 1 - rho, g, eta, r));
+            Float ss = BeamDiffusionSS(rho, 1 - rho, g, eta, r); 
+            Float ms = BeamDiffusionMS(rho, 1 - rho, g, eta, r);
+            t->profile[i * t->nRadiusSamples + j] = 2 * Pi * r * (ms); // ms + ss!!!
+            printf("\n(sigma_s: %.5f, sigma_a: %.5f, r: %.9f) ===>  ss: %.9f, ms: %.9f, profile: %.9f\n", rho, 1-rho, r, ss, ms, 2*Pi*r*(ss+ms));
         }
 
         // Compute effective albedo $\rho_{\roman{eff}}$ and CDF for importance
@@ -194,10 +196,14 @@ BSSRDFTable::BSSRDFTable(int nRhoSamples, int nRadiusSamples)
 
 Spectrum TabulatedBSSRDF::Sr(Float r) const {
     Spectrum Sr(0.f);
+    printf("\nSr!!!\n");
+    printf("r: %.5f\n", r);
     for (int ch = 0; ch < Spectrum::nSamples; ++ch) {
         // Convert $r$ into unitless optical radius $r_{\roman{optical}}$
+        printf("(sigma_t: %.5f, ", sigma_t[ch]);
         Float rOptical = r * sigma_t[ch];
-
+        printf("rOptical: %.5f, ", rOptical);
+        printf("rho: %.5f) ===> ", rho[ch]);
         // Compute spline weights to interpolate BSSRDF on channel _ch_
         int rhoOffset, radiusOffset;
         Float rhoWeights[4], radiusWeights[4];
@@ -209,18 +215,24 @@ Spectrum TabulatedBSSRDF::Sr(Float r) const {
 
         // Set BSSRDF value _Sr[ch]_ using tensor spline interpolation
         Float sr = 0;
+        printf(" avg(");
         for (int i = 0; i < 4; ++i) {
             for (int j = 0; j < 4; ++j) {
                 Float weight = rhoWeights[i] * radiusWeights[j];
-                if (weight != 0)
-                    sr += weight *
-                          table.EvalProfile(rhoOffset + i, radiusOffset + j);
+                if (weight != 0){
+                    Float val = table.EvalProfile(rhoOffset + i, radiusOffset + j);
+                    sr += weight * val;
+                    printf("%.9f*%.9f, ", weight, val);
+                }
             }
         }
 
         // Cancel marginal PDF factor from tabulated BSSRDF profile
+        Float oldSr = sr;
         if (rOptical != 0) sr /= 2 * Pi * rOptical;
+        printf(") ==> sr: %.9f / (%.5f) = %.9f ", oldSr, 2*Pi*rOptical, sr);
         Sr[ch] = sr;
+        printf("SR: %.9f\n", sr*=sigma_t[ch]*sigma_t[ch]);
     }
     // Transform BSSRDF value into world space units
     Sr *= sigma_t * sigma_t;
@@ -390,8 +402,9 @@ Float getRealDr(Normal3f n, Float zb, Float D, Float sigma_t, Vector3f x,
     Float numerator = r * r - x_dot_w * x_dot_w;
     Float cos_beta = -std::sqrt(numerator / (r * r + zb * zb));
     Float mu0 = Dot(-n, w);
-    if (mu0 > 0) 
+    if (mu0 > 0){ 
         return std::sqrt(D * mu0 * (D * mu0 - zb * cos_beta * 2) + r * r);
+    }
     return std::sqrt(1 / (9 * sigma_t * sigma_t) + r * r);
 }
 
@@ -419,24 +432,19 @@ Float DirectionalMonopole(Vector3f x, Vector3f w, Float r, Normal3f n,
 Float DirectionalDipole(Float sigma_a, Float sigma_s, Float g, Float eta, 
                         Point3f xi, Point3f xo, Vector3f wi, Normal3f ni, 
                         Normal3f no){
-    printf("Sigma a: %.3f, Sigma s: %.3f, g: %.3f, eta: %.3f\n", 
-            sigma_a, sigma_s, g, eta);
-    printf("Punto entrada: %.3f, %.3f, %.3f\n", xi.x, xi.y, xi.z);
-    printf("Punto salida: %.3f, %.3f, %.3f\n", xo.x, xo.y, xo.z);
-    printf("Direccion entrada: %.3f, %.3f, %.3f\n", wi.x, wi.y, wi.z);
-    printf("Direccion normal entrada: %.3f, %.3f, %.3f\n", ni.x, ni.y, ni.z);
-    printf("Direccion normal salida: %.3f, %.3f, %.3f\n", no.x, no.y, no.z);
+    sigma_a = sigma_a / 10.0;
+    sigma_s = sigma_s / 10.0;
     
     // Compute reduced scattering coefficients $\sigmaps, \sigmapt$ and albedo
     // $\rhop$
     Float sigma_t = sigma_a + sigma_s;
-    Float sigmap_s = sigma_s * (1 - g);
+    Float sigmap_s = sigma_s * (1.0 - g);
     Float sigmap_t = sigma_a + sigmap_s;
     Float rhop = sigmap_s / sigmap_t;
 
     // Compute non-classical diffusion coefficient $D_\roman{G}$ using
     // Equation (15.24)
-    Float D_g = (2 * sigma_a + sigmap_s) / (3 * sigmap_t * sigmap_t);
+    Float D_g = ( 2 * sigma_a + sigmap_s) / (3 * sigmap_t * sigmap_t);
 
     // Compute effective transport coefficient $\sigmatr$ based on $D_\roman{G}$
     Float sigma_tr = std::sqrt(sigma_a / D_g);
@@ -444,7 +452,8 @@ Float DirectionalDipole(Float sigma_a, Float sigma_s, Float g, Float eta,
     // Determine linear extrapolation distance $\depthextrapolation$ using
     // Equation (15.28)
     Float fm1 = FresnelMoment1(eta), fm2 = FresnelMoment2(eta);
-    Float zb = 2 * D_g * (1 + 3 * fm2) / (1 - 2 * fm1);
+    Float A = (1 + 3 * fm2) / (1 - 2 * fm1);
+    Float zb = 2 * D_g * A;
 
     Normal3f ni_ast = xo == xi ? ni : 
         Normal3f(Cross(Normalize(xo-xi), Normalize(Cross(ni, xo-xi))));
@@ -456,12 +465,10 @@ Float DirectionalDipole(Float sigma_a, Float sigma_s, Float g, Float eta,
     Vector3f xoxv = xo - (xi + Vector3f(ni_ast * (2 * zb)));
     Float dv = xoxv.Length();
 
-    printf("Before monopole\n");
     Float positiveMonopole = DirectionalMonopole(xo-xi, wr, dr, no, sigma_tr,
                                                  D_g, eta);
     Float negativeMonopole = DirectionalMonopole(xoxv, wv, dv, no, sigma_tr, 
                                                  D_g, eta);
-    printf("Results: %.3f, %.3f\n", positiveMonopole, negativeMonopole);
     return rhop * kappa * (positiveMonopole - negativeMonopole);    
 }
 
@@ -517,12 +524,7 @@ Spectrum DirectionalBSSRDF::S(const SurfaceInteraction &pi, const Vector3f &wi) 
     for (int c = 0; c < Spectrum::nSamples; ++c)
         radiance[c] = DirectionalDipole(sigma_a[c], sigma_s[c], g, eta, pi.p, 
                                         po.p, wi, pi.n, po.n);
-}
-
-
-/*
-Spectrum DirectionalBSSRDF::Sp(const SurfaceInteraction &pi) const {
-    return DirectionalDipole(sigma_a, sigma_s, g, eta, pi.p, po.p, wi, pi.n, po.n);
+    return radiance;
 }
 
 Spectrum DirectionalBSSRDF::Sample_S(const Scene &scene, Float u1, const Point2f &u2,
@@ -541,14 +543,130 @@ Spectrum DirectionalBSSRDF::Sample_S(const Scene &scene, Float u1, const Point2f
 }
 
 Spectrum DirectionalBSSRDF::Sample_Sp(const Scene &scene, Float u1, const Point2f &u2,
-                       		MemoryArena &arena, SurfaceInteraction *si,
+                       		MemoryArena &arena, SurfaceInteraction *pi,
                        		Float *pdf) const {
-    //available po, eta, material, mode
-    //
+    ProfilePhase pp(Prof::BSSRDFEvaluation);
+    // Choose projection axis for BSSRDF sampling
+    Vector3f vx, vy, vz;
+    if (u1 < .5f) {
+        vx = ss;
+        vy = ts;
+        vz = Vector3f(ns);
+        u1 *= 2;
+    } else if (u1 < .75f) {
+        // Prepare for sampling rays with respect to _ss_
+        vx = ts;
+        vy = Vector3f(ns);
+        vz = ss;
+        u1 = (u1 - .5f) * 4;
+    } else {
+        // Prepare for sampling rays with respect to _ts_
+        vx = Vector3f(ns);
+        vy = ss;
+        vz = ts;
+        u1 = (u1 - .75f) * 4;
+    }
+
+    // Choose spectral channel for BSSRDF sampling
+    int ch = Clamp((int)(u1 * Spectrum::nSamples), 0, Spectrum::nSamples - 1);
+    u1 = u1 * Spectrum::nSamples - ch;
+
+    // Sample BSSRDF profile in polar coordinates
+    Float r = Sample_Sr(ch, u2[0]);
+    if (r < 0) return Spectrum(0.f);
+    Float phi = 2 * Pi * u2[1];
+
+    // Compute BSSRDF profile bounds and intersection height
+    Float rMax = Sample_Sr(ch, 0.99999f);
+    if (r > rMax) return Spectrum(0.f);
+    Float l = 2 * std::sqrt(rMax * rMax - r * r);
+
+    // Compute BSSRDF sampling ray segment
+    Interaction base;
+    base.p =
+        po.p + r * (vx * std::cos(phi) + vy * std::sin(phi)) - l * vz * 0.5f;
+    base.time = po.time;
+    Point3f pTarget = base.p + l * vz;
+
+    // Intersect BSSRDF sampling ray against the scene geometry
+
+    // Declare _IntersectionChain_ and linked list
+    struct IntersectionChain {
+        SurfaceInteraction si;
+        IntersectionChain *next = nullptr;
+    };
+    IntersectionChain *chain = ARENA_ALLOC(arena, IntersectionChain)();
+
+    // Accumulate chain of intersections along ray
+    IntersectionChain *ptr = chain;
+    int nFound = 0;
+    while (scene.Intersect(base.SpawnRayTo(pTarget), &ptr->si)) {
+        base = ptr->si;
+        // Append admissible intersection to _IntersectionChain_
+        if (ptr->si.primitive->GetMaterial() == this->material) {
+            IntersectionChain *next = ARENA_ALLOC(arena, IntersectionChain)();
+            ptr->next = next;
+            ptr = next;
+            nFound++;
+        }
+    }
+
+    // Randomly choose one of several intersections during BSSRDF sampling
+    if (nFound == 0) return Spectrum(0.0f);
+    int selected = Clamp((int)(u1 * nFound), 0, nFound - 1);
+    while (selected-- > 0) chain = chain->next;
+    *pi = chain->si;
+
+    Vector3f wi = CosineSampleHemisphere(u2);
+    if (pi->wo.z < 0) wi.z *= -1;
+    Float wiPdf = SameHemisphere(pi->wo, wi) ? AbsCosTheta(wi) * InvPi : 0;
+    wi = -wi;
+    
+    // Compute sample PDF and return the spatial BSSRDF term $\Sp$
+    *pdf = this->Pdf_Sp(*pi) / nFound * wiPdf;
+    return this->Sp(*pi, wi);
 }
 
-Spectrum DirectionalBSSRDF::Pdf_Sp(const SurfaceInteraction &si) const {
-    //available po, eta, material, mode
-    //
+Float DirectionalBSSRDF::Sample_Sr(int ch, Float u) const {
+    // importance sample average distance before exiting using exponential falloff
+    u = 1.0 - u;
+    if (sigma_t[ch] == 0) return -1;
+    return -(std::log(u)) / sigma_t[ch]; 
 }
-*/
+
+Float DirectionalBSSRDF::Pdf_Sp(const SurfaceInteraction &pi) const {
+    // Express $\pti-\pto$ and $\bold{n}_i$ with respect to local coordinates at
+    // $\pto$
+    Vector3f d = po.p - pi.p;
+    Vector3f dLocal(Dot(ss, d), Dot(ts, d), Dot(ns, d));
+    Normal3f nLocal(Dot(ss, pi.n), Dot(ts, pi.n), Dot(ns, pi.n));
+
+    // Compute BSSRDF profile radius under projection along each axis
+    Float rProj[3] = {std::sqrt(dLocal.y * dLocal.y + dLocal.z * dLocal.z),
+                      std::sqrt(dLocal.z * dLocal.z + dLocal.x * dLocal.x),
+                      std::sqrt(dLocal.x * dLocal.x + dLocal.y * dLocal.y)};
+
+    // Return combined probability from all BSSRDF sampling strategies
+    Float pdf = 0, axisProb[3] = {.25f, .25f, .5f};
+    Float chProb = 1 / (Float)Spectrum::nSamples;
+    for (int axis = 0; axis < 3; ++axis)
+        for (int ch = 0; ch < Spectrum::nSamples; ++ch)
+            pdf += Pdf_Sr(ch, rProj[axis]) * std::abs(nLocal[axis]) * chProb *
+                   axisProb[axis];
+    return pdf;
+}
+
+Float DirectionalBSSRDF::Pdf_Sr(int ch, Float r) const {
+    // Calculate importance sampling function pdf
+    return sigma_t[ch] * std::exp(-sigma_t[ch]*r);
+}
+
+Spectrum DirectionalBSSRDF::Sp(const SurfaceInteraction &pi, 
+                               const Vector3f wi) const {
+    Spectrum radiance;
+    for (int c = 0; c < Spectrum::nSamples; ++c){
+        radiance[c] = DirectionalDipole(sigma_a[c], sigma_s[c], g, eta, pi.p, 
+                                        po.p, wi, pi.n, po.n);
+    }
+    return radiance;
+}

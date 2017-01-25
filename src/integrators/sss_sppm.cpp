@@ -308,7 +308,7 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                         Vector3f wo = -ray.d;
                         if (depth == 0 || specularBounce)
                             pixel.Ld += beta * isect.Le(wo); 
-                        pixel.Ld += beta * UniformSampleOneLightExtended(isect, 
+                        pixel.Ld += beta * UniformSampleOneLight(isect, 
                                         scene, arena, *tileSampler);
                         
                         // Possibly create visible point and end camera path
@@ -341,14 +341,14 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                                 SurfaceInteraction pi;
                                 Spectrum S = isect.bssrdf->Sample_S(
                                     scene, tileSampler->Get1D(), tileSampler->Get2D(), arena, &pi, &pdf);
+                                printf("\nS spectrum: %.10f, %.10f, %.10f\npdf: %.10f\n", S[0], S[1], S[2], pdf);
                                 DCHECK(!std::isinf(beta.y()));
                                 if (S.IsBlack() || pdf == 0) break;
                                 beta *= S / pdf;
 
                                 // Account for the direct subsurface scattering component
-                                pixel.Ld += beta * UniformSampleOneLight(pi, scene, arena, tileSampler);
-
-
+                                pixel.Ld += beta * UniformSampleOneLight(pi, scene, arena, *tileSampler);
+                                printf("Ld: %.10f, %.10f, %.10f\n", pixel.Ld[0], pixel.Ld[1], pixel.Ld[2]);
                                 break;
                             }
 
@@ -436,7 +436,6 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
             StatTimer timer(&photonTimer);
             std::vector<MemoryArena> photonShootArenas(MaxThreadIndex());
             ParallelFor([&](int photonIndex) {
-                printf("\nPhoton index: %d\n", photonIndex);
                 MemoryArena &arena = photonShootArenas[ThreadIndex];
                 // Follow photon path for _photonIndex_
                 uint64_t haltonIndex =
@@ -460,7 +459,6 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                     Lerp(RadicalInverse(haltonDim + 4, haltonIndex),
                          camera->shutterOpen, camera->shutterClose);
                 haltonDim += 5;
-
                 // Generate _photonRay_ from light source and initialize _beta_
                 RayDifferential photonRay;
                 Normal3f nLight;
@@ -468,7 +466,6 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                 Spectrum Le =
                     light->Sample_Le(uLight0, uLight1, uLightTime, &photonRay,
                                      &nLight, &pdfPos, &pdfDir);
-                printf("Photon ray sampled\n");
                 printf("\tOrigin: %.3f, %.3f, %.3f\n", 
                         photonRay.o.x, photonRay.o.y, photonRay.o.z);
                 printf("\tDirection: %.3f, %.3f, %.3f\n", 

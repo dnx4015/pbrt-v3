@@ -118,11 +118,12 @@ class SeparableBSSRDF : public BSSRDF {
     virtual Float Sample_Sr(int ch, Float u) const = 0;
     virtual Float Pdf_Sr(int ch, Float r) const = 0;
 
-  private:
+  protected:
     // SeparableBSSRDF Private Data
     const Normal3f ns;
     const Vector3f ss, ts;
     const Material *material;
+  private:
     const TransportMode mode;
 };
 
@@ -141,9 +142,17 @@ class DirectionalBSSRDF : public SeparableBSSRDF {
     }
 
     Spectrum S(const SurfaceInteraction &pi, const Vector3f &wi) const;
+    Spectrum Sample_S(const Scene &scene, Float u1, const Point2f &u2,
+                      MemoryArena &arena, SurfaceInteraction *si,
+                      Float *pdf) const;
+    Spectrum Sp(const SurfaceInteraction &pi, const Vector3f wi) const; 
+    Spectrum Sample_Sp(const Scene &scene, Float u1, const Point2f &u2,
+                       MemoryArena &arena, SurfaceInteraction *si,
+                       Float *pdf) const;
+    Float Pdf_Sp(const SurfaceInteraction &si) const;
     Spectrum Sr(Float distance) const {return Spectrum(0);}
-    Float Pdf_Sr(int ch, Float distance) const {return 0;}
     Float Sample_Sr(int ch, Float sample) const;
+    Float Pdf_Sr(int ch, Float distance) const;
 
   private:
     // DirectionalBSSRDF Private Data
