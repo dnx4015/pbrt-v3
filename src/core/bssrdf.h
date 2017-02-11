@@ -221,6 +221,7 @@ Float BeamDiffusionSS(Float sigma_s, Float sigma_a, Float g, Float eta,
 Float BeamDiffusionMS(Float sigma_s, Float sigma_a, Float g, Float eta,
                       Float r);
 void ComputeBeamDiffusionBSSRDF(Float g, Float eta, BSSRDFTable *t);
+void ComputeDirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t);
 void SubsurfaceFromDiffuse(const BSSRDFTable &table, const Spectrum &rhoEff,
                            const Spectrum &mfp, Spectrum *sigma_a,
                            Spectrum *sigma_s);

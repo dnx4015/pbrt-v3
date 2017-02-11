@@ -78,6 +78,7 @@
 #include "materials/substrate.h"
 #include "materials/subsurface.h"
 #include "materials/subsurfaceSPPM.h"
+#include "materials/subsurfaceDirpole.h"
 #include "materials/translucent.h"
 #include "materials/uber.h"
 #include "samplers/halton.h"
@@ -446,6 +447,8 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
         material = CreateKdSubsurfaceMaterial(mp);
     else if (name == "subsurfaceSPPM")
         material = CreateSubsurfaceSPPMMaterial(mp);
+    else if (name == "subsurfaceDirpole")
+        material = CreateSubsurfaceDirMaterial(mp);
     else if (name == "fourier")
         material = CreateFourierMaterial(mp);
     else {
