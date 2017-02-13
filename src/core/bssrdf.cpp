@@ -360,14 +360,14 @@ BSSRDFTable::BSSRDFTable(int nRhoSamples, int nRadiusSamples)
 
 Spectrum TabulatedBSSRDF::Sr(Float r) const {
     Spectrum Sr(0.f);
-    printf("\nSr!!!\n");
-    printf("r: %.5f\n", r);
+    /*printf("\nSr!!!\n");
+    printf("r: %.5f\n", r);*/
     for (int ch = 0; ch < Spectrum::nSamples; ++ch) {
         // Convert $r$ into unitless optical radius $r_{\roman{optical}}$
-        printf("(sigma_t: %.5f, ", sigma_t[ch]);
+        //printf("(sigma_t: %.5f, ", sigma_t[ch]);
         Float rOptical = r * sigma_t[ch];
-        printf("rOptical: %.5f, ", rOptical);
-        printf("rho: %.5f) ===> ", rho[ch]);
+        //printf("rOptical: %.5f, ", rOptical);
+        //printf("rho: %.5f) ===> ", rho[ch]);
         // Compute spline weights to interpolate BSSRDF on channel _ch_
         int rhoOffset, radiusOffset;
         Float rhoWeights[4], radiusWeights[4];
@@ -379,14 +379,14 @@ Spectrum TabulatedBSSRDF::Sr(Float r) const {
 
         // Set BSSRDF value _Sr[ch]_ using tensor spline interpolation
         Float sr = 0;
-        printf(" avg(");
+        //printf(" avg(");
         for (int i = 0; i < 4; ++i) {
             for (int j = 0; j < 4; ++j) {
                 Float weight = rhoWeights[i] * radiusWeights[j];
                 if (weight != 0){
                     Float val = table.EvalProfile(rhoOffset + i, radiusOffset + j);
                     sr += weight * val;
-                    printf("%.9f*%.9f, ", weight, val);
+                    //printf("%.9f*%.9f, ", weight, val);
                 }
             }
         }
@@ -394,9 +394,9 @@ Spectrum TabulatedBSSRDF::Sr(Float r) const {
         // Cancel marginal PDF factor from tabulated BSSRDF profile
         Float oldSr = sr;
         if (rOptical != 0) sr /= 2 * Pi * rOptical;
-        printf(") ==> sr: %.9f / (%.5f) = %.9f ", oldSr, 2*Pi*rOptical, sr);
+        //printf(") ==> sr: %.9f / (%.5f) = %.9f ", oldSr, 2*Pi*rOptical, sr);
         Sr[ch] = sr;
-        printf("SR: %.9f\n", sr*=sigma_t[ch]*sigma_t[ch]);
+        //printf("SR: %.9f\n", sr*=sigma_t[ch]*sigma_t[ch]);
     }
     // Transform BSSRDF value into world space units
     Sr *= sigma_t * sigma_t;
