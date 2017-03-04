@@ -1,6 +1,6 @@
-Integrator "sss_sppm" "integer numiterations" [4] "float radius" [5]
+Integrator "beam_sppm" "integer numiterations" [4] "float radius" [5]
 Film "image" "integer xresolution" [256] "integer yresolution" [128]
-    "string filename" "simple.exr"
+    "string filename" "sphere_sppm_dirpole.exr"
 
 # Bug Fix of old scene
 # Scale -1 1 1
@@ -14,7 +14,8 @@ AttributeBegin
     LightSource "point" "color I" [300 300 300]
 AttributeEnd
 AttributeBegin
-    Material "subsurfaceSPPM" 
+    #Material "subsurfaceSPPM" 
+    Material "subsurfaceDirpole" 
        "float eta" [1.3]
        "string name" ["Ketchup"]
        "float scale" [50]

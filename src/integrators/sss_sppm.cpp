@@ -217,7 +217,7 @@ bool SSS_SPPMIntegrator::traceSubsurfaceScattering(SurfaceInteraction isect,
 
         haltonDim += 3;
     }
-
+    return true;
 }
 
 // SSS_SPPM Method Definitions

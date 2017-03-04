@@ -1,7 +1,7 @@
 Integrator "path" "integer maxdepth" [3]
 Sampler "halton" "integer pixelsamples" [4]
 Film "image" "integer xresolution" [256] "integer yresolution" [128]
-    "string filename" "path_beam.exr"
+    "string filename" "sphere_path_beam.exr"
 
 # Bug Fix of old scene
 # Scale -1 1 1
