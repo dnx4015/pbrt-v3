@@ -1,4 +1,4 @@
-Integrator "beam_sppm" "integer numiterations" [4] "float radius" [5]
+Integrator "sss_sppm" "integer numiterations" [4] "float radius" [5]
 Film "image" "integer xresolution" [256] "integer yresolution" [128]
     "string filename" "sphere_sppm_beam.exr"
 
