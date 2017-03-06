@@ -341,14 +341,12 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                                 SurfaceInteraction pi;
                                 Spectrum S = isect.bssrdf->Sample_S(
                                     scene, tileSampler->Get1D(), tileSampler->Get2D(), arena, &pi, &pdf);
-                                printf("\nS spectrum: %.10f, %.10f, %.10f\npdf: %.10f\n", S[0], S[1], S[2], pdf);
                                 DCHECK(!std::isinf(beta.y()));
                                 if (S.IsBlack() || pdf == 0) break;
                                 beta *= S / pdf;
 
                                 // Account for the direct subsurface scattering component
                                 pixel.Ld += beta * UniformSampleOneLight(pi, scene, arena, *tileSampler);
-                                printf("Ld: %.10f, %.10f, %.10f\n", pixel.Ld[0], pixel.Ld[1], pixel.Ld[2]);
                                 break;
                             }
 
@@ -466,10 +464,6 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                 Spectrum Le =
                     light->Sample_Le(uLight0, uLight1, uLightTime, &photonRay,
                                      &nLight, &pdfPos, &pdfDir);
-                printf("\tOrigin: %.3f, %.3f, %.3f\n", 
-                        photonRay.o.x, photonRay.o.y, photonRay.o.z);
-                printf("\tDirection: %.3f, %.3f, %.3f\n", 
-                        photonRay.d.x, photonRay.d.y, photonRay.d.z);
                 if (pdfPos == 0 || pdfDir == 0 || Le.IsBlack()) return;
                 Spectrum beta = (AbsDot(nLight, photonRay.d) * Le) /
                                 (lightPdf * pdfPos * pdfDir);
@@ -478,57 +472,39 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                 // Follow photon path through scene and record intersections
                 SurfaceInteraction isect;
                 for (int depth = 0; depth < maxDepth; ++depth) {
-                    printf("Depth: %d\n", depth);
                     if (!scene.Intersect(photonRay, &isect)) break;
                     ++totalPhotonSurfaceInteractions;
                     if (depth > 0) {//skip direct illumination
                         // Add photon contribution to nearby visible points
-                        printf("Add photon contribution to nearby visible points\n");
                         Point3i photonGridIndex;
                         if (ToGrid(isect.p, gridBounds, gridRes,
                                    &photonGridIndex)) {
                             int h = hash(photonGridIndex, hashSize);
                             // Add photon contribution to visible points in
                             // _grid[h]_
-                            printf("Add photon contribution to visible points");
-                            printf(" in _grid[%d]_\n", h);
                             for (SSS_SPPMPixelListNode *node =
                                      grid[h].load(std::memory_order_relaxed);
                                  node != nullptr; node = node->next) {
                                 ++visiblePointsChecked;
-                                printf("visiblePointsChecked: %d\n", 
-                                        visiblePointsChecked);
                                 SSS_SPPMPixel &pixel = *node->pixel;
                                 Float radius = pixel.radius;
-                                printf("pixel radius: %.3f\n", pixel.radius);
                                 if (DistanceSquared(pixel.vp.p, isect.p) >
                                     radius * radius)
                                     continue;
                                 // Update _pixel_ $\Phi$ and $M$ for nearby
                                 // photon
-                                printf("Update pixel Phi and M for ");
-                                printf("photon\n");
                                 Vector3f wi = -photonRay.d;
-                                printf("Direction: %.3f, %.3f, %.3f\n", 
-                                        wi.x, wi.y, wi.z);
                                 Spectrum Phi;
-                                printf("Is subsurface: %d\n", 
-                                        pixel.vp.isSubsurface);
                                 if ( !pixel.vp.isSubsurface ){
-                                    printf("Pixel is NOT subsurface material\n");
                                     Phi = beta * pixel.vp.bsdf->f(pixel.vp.wo, wi);
                                 }else{
-                                    printf("Pixel is subsurface material\n");
                                     if (pixel.vp.bssrdf != NULL){
-                                        printf("Bssrdf is not null\n");
                                         Phi = beta * pixel.vp.bssrdf->S(isect, wi);
                                     }
                                 }
-                                printf("Phi updated\n");
                                 for (int i = 0; i < Spectrum::nSamples; ++i)
                                     pixel.Phi[i].Add(Phi[i]);
                                 ++pixel.M;
-                                printf("M updated\n");
                             }
                         }
                     }
@@ -538,9 +514,6 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                     isect.ComputeScatteringFunctions(photonRay, arena, true,
                                                      TransportMode::Importance);
                     if (!isect.bsdf) {
-                        if (isect.bssrdf){
-                            printf("MUST add check bssrdf\n");
-                        }
                         --depth;
                         photonRay = isect.SpawnRay(photonRay.d);
                         continue;
@@ -549,13 +522,11 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                     const BSSRDF *photonBSSRDF = isect.bssrdf;
 
                     // Sample BSDF _fr_ and direction _wi_ for reflected photon
-                    printf("Sample fr and wi for reflected photon\n");
                     Vector3f wi, wo = -photonRay.d;
                     Float pdf;
                     BxDFType flags;
 
                     // Generate _bsdfSample_ for outgoing photon sample
-                    printf("Generate bsdfSample for outgoing photon sample\n");
                     Point2f bsdfSample(
                         RadicalInverse(haltonDim, haltonIndex),
                         RadicalInverse(haltonDim + 1, haltonIndex));
@@ -563,13 +534,8 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                     Spectrum fr = photonBSDF.Sample_f(wo, &wi, bsdfSample, &pdf,
                                                       BSDF_ALL, &flags);
                     if (fr.IsBlack() || pdf == 0.f) break;
-                    printf("Sampled fr: ");
-                    for (int i = 0; i < Spectrum::nSamples; ++i)
-                        printf("%.3f\t", fr[i]);
-                    printf("\nSampled pdf: %.3f\n", pdf);
 
                     if (photonBSSRDF != nullptr && (flags & BSDF_TRANSMISSION)){
-                        printf("Trace subsurface scattering\n");
                         bool absorbed = traceSubsurfaceScattering(isect, scene, 
                                                                   wo, 
                                                                   photonRay.o,
@@ -577,7 +543,6 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                                                                   haltonDim, 
                                                                   haltonIndex,
                                                                   100);
-                        printf("Returned from trace photons\n");
                         if (absorbed) break;
                     }
                     Spectrum bnew =
@@ -589,7 +554,6 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                     beta = bnew / (1 - q);
                     photonRay = (RayDifferential)isect.SpawnRay(wi);
                 }
-                printf("Exit depth loop\n");
                 arena.Reset();
             }, photonsPerIteration, 8192);
             progress.Update();
@@ -637,12 +601,9 @@ void SSS_SPPMIntegrator::Render(const Scene &scene) {
                     const SSS_SPPMPixel &pixel =
                         pixels[(y - pixelBounds.pMin.y) * (x1 - x0) + (x - x0)];
                     Spectrum L = pixel.Ld / (iter + 1);
-                    if (x > 9)
-                        printf("%.3f ", L[0]);
                     L += pixel.tau / (Np * Pi * pixel.radius * pixel.radius);
                     image[offset++] = L;
                 }
-                printf("\n");
             }
             camera->film->SetImage(image.get());
             camera->film->WriteImage();
