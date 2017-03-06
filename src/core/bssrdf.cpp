@@ -561,13 +561,13 @@ Float TabulatedBSSRDF::Pdf_Sr(int ch, Float r) const {
 Spectrum DirectionalBSSRDF::S(const SurfaceInteraction &pi, const Vector3f &wi) const {
     Spectrum radiance;
     for (int c = 0; c < Spectrum::nSamples; ++c)
-        radiance[c] = DirectionalDipole(sigma_a[c], sigma_s[c], g, eta, pi.p, 
+        radiance[c] = DirectionalDipole(sigma_s[c], sigma_a[c], g, eta, pi.p, 
                                         po.p, wi, pi.n, po.n);
     return radiance;
 }
 
 Spectrum DirectionalBSSRDF::Sample_S(const Scene &scene, Float u1, const Point2f &u2,
-                       		     MemoryArena &arena, SurfaceInteraction *si,
+                       		         MemoryArena &arena, SurfaceInteraction *si,
                                      Float *pdf) const {
     //available po, eta, material, mode
     ProfilePhase pp(Prof::BSSRDFEvaluation);
@@ -704,7 +704,7 @@ Spectrum DirectionalBSSRDF::Sp(const SurfaceInteraction &pi,
                                const Vector3f wi) const {
     Spectrum radiance;
     for (int c = 0; c < Spectrum::nSamples; ++c){
-        radiance[c] = DirectionalDipole(sigma_a[c], sigma_s[c], g, eta, pi.p, 
+        radiance[c] = DirectionalDipole(rho[c], 1-rho[c], g, eta, pi.p, 
                                         po.p, wi, pi.n, po.n);
     }
     return radiance;
