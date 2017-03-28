@@ -137,7 +137,7 @@ Spectrum PathIntegrator::Li(const RayDifferential &r, const Scene &scene,
             SurfaceInteraction pi;
             Spectrum S = isect.bssrdf->Sample_S(
                 scene, sampler.Get1D(), sampler.Get2D(), arena, &pi, &pdf);
-            printf("\nS spectrum: %.10f, %.10f, %.10f\npdf: %.10f\n", S[0], S[1], S[2], pdf);
+            //printf("\nS spectrum: %.10f, %.10f, %.10f\npdf: %.10f\n", S[0], S[1], S[2], pdf);
             DCHECK(!std::isinf(beta.y()));
             if (S.IsBlack() || pdf == 0) break;
             beta *= S / pdf;
@@ -146,7 +146,7 @@ Spectrum PathIntegrator::Li(const RayDifferential &r, const Scene &scene,
             L += beta * UniformSampleOneLight(pi, scene, arena, sampler, false,
                                               lightDistribution->Lookup(pi.p));
 
-            printf("Ld: %.10f, %.10f, %.10f\n", L[0], L[1], L[2]);
+            //printf("Ld: %.10f, %.10f, %.10f\n", L[0], L[1], L[2]);
 
             // Account for the indirect subsurface scattering component
             Spectrum f = pi.bsdf->Sample_f(pi.wo, &wi, sampler.Get2D(), &pdf,

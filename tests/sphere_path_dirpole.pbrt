@@ -15,7 +15,8 @@ AttributeBegin
     LightSource "point" "color I" [300 300 300]
 AttributeEnd
 AttributeBegin
-    Material "subsurfaceDirpole" 
+#    Material "subsurfaceDirpole" 
+    Material "subsurfaceSPPM"
        "float eta" [1.3]
        "string name" ["Ketchup"]
        "float scale" [50]
