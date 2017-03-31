@@ -323,7 +323,7 @@ void ComputeDirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t) {
             Float rho = t->rhoSamples[i], r = t->radiusSamples[j];
             Float ss = BeamDiffusionSS(rho, 1 - rho, g, eta, r); 
             Float ms = DirpoleDiffusionMS(rho, 1 - rho, g, eta, r);
-            t->profile[i * t->nRadiusSamples + j] = 2 * Pi * r * (ms); // ms + ss!!!
+            t->profile[i * t->nRadiusSamples + j] = 2 * Pi * r * (ms); // ms+ss!
         }
 
         // Compute effective albedo $\rho_{\roman{eff}}$ and CDF for importance
@@ -547,7 +547,8 @@ Float TabulatedBSSRDF::Pdf_Sr(int ch, Float r) const {
     return std::max((Float)0, sr * sigma_t[ch] * sigma_t[ch] / rhoEff);
 }
 
-Spectrum DirectionalBSSRDF::S(const SurfaceInteraction &pi, const Vector3f &wi) const {
+Spectrum TabulatedSamplingBSSRDF::S(const SurfaceInteraction &pi, 
+                                    const Vector3f &wi) const {
     Spectrum Sr(0.f);
     for (int c = 0; c < Spectrum::nSamples; ++c){
         Float rOptical = Distance(po.p, pi.p) * sigma_t[c];
@@ -559,7 +560,7 @@ Spectrum DirectionalBSSRDF::S(const SurfaceInteraction &pi, const Vector3f &wi) 
     return Sr.Clamp();
 }
 
-Spectrum DirectionalBSSRDF::Sample_S(const Scene &scene, Float u1,
+Spectrum TabulatedSamplingBSSRDF::Sample_S(const Scene &scene, Float u1,
                                    const Point2f &u2, MemoryArena &arena,
                                    SurfaceInteraction *si, Float *pdf) const {
     ProfilePhase pp(Prof::BSSRDFEvaluation);
@@ -573,7 +574,7 @@ Spectrum DirectionalBSSRDF::Sample_S(const Scene &scene, Float u1,
     return Sp;
 }
 
-Spectrum DirectionalBSSRDF::Sample_Sp(const Scene &scene, Float u1, const Point2f &u2,
+Spectrum TabulatedSampling::Sample_Sp(const Scene &scene, Float u1, const Point2f &u2,
                        		MemoryArena &arena, SurfaceInteraction *pi,
                        		Float *pdf) const {
     ProfilePhase pp(Prof::BSSRDFEvaluation);
@@ -658,19 +659,19 @@ Spectrum DirectionalBSSRDF::Sample_Sp(const Scene &scene, Float u1, const Point2
     return this->Sp(*pi, wi);
 }
 
-Float DirectionalBSSRDF::Sample_Sr(int ch, Float u) const {
+Float TabulatedSamplingBSSRDF::Sample_Sr(int ch, Float u) const {
     // importance sample average distance before exiting using exponential falloff
     u = 1.0 - u;
     //if (sigma_t[ch] == 0) return -1;
     return -(std::log(u)); // sigma_t[ch]; 
 }
 
-Float DirectionalBSSRDF::Pdf_Sr(int ch, Float r) const {
+Float TabulatedSamplingBSSRDF::Pdf_Sr(int ch, Float r) const {
     // Calculate importance sampling function pdf
     return /*sigma_t[ch] * */ std::exp(-sigma_t[ch] * r);
 }
 
-Spectrum DirectionalBSSRDF::Sp(const SurfaceInteraction &pi, 
+Spectrum TabulatedSamplingBSSRDF::Sp(const SurfaceInteraction &pi, 
                                const Vector3f wi) const {
     Spectrum Sr(0.f);
     for (int c = 0; c < Spectrum::nSamples; ++c){

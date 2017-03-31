@@ -127,7 +127,6 @@ class SeparableBSSRDF : public BSSRDF {
     const TransportMode mode;
 };
 
-
 class DirectionalBSSRDF : public SeparableBSSRDF {
   public:
     // DirectionalBSSRDF Public Methods
@@ -161,7 +160,6 @@ class DirectionalBSSRDF : public SeparableBSSRDF {
     Float g;*/
 };
 
-
 class TabulatedBSSRDF : public SeparableBSSRDF {
   public:
     // TabulatedBSSRDF Public Methods
@@ -176,6 +174,38 @@ class TabulatedBSSRDF : public SeparableBSSRDF {
     Spectrum Sr(Float distance) const;
     Float Pdf_Sr(int ch, Float distance) const;
     Float Sample_Sr(int ch, Float sample) const;
+
+  private:
+    // TabulatedBSSRDF Private Data
+    const BSSRDFTable &table;
+    Spectrum sigma_t, rho;
+};
+
+class TabulatedSamplingBSSRDF : public SeparableBSSRDF {
+  public:
+    // TabulatedSamplingBSSRDF Public Methods
+    TabulatedSamplingBSSRDF(const SurfaceInteraction &po,
+                    const Material *material,
+                    TransportMode mode, Float eta, const Spectrum &sigma_a,
+                    const Spectrum &sigma_s, const BSSRDFTable &table)
+        : SeparableBSSRDF(po, eta, material, mode), table(table) {
+        sigma_t = sigma_a + sigma_s;
+        for (int c = 0; c < Spectrum::nSamples; ++c)
+            rho[c] = sigma_t[c] != 0 ? (sigma_s[c] / sigma_t[c]) : 0;
+    }
+    Spectrum S(const SurfaceInteraction &pi, const Vector3f &wi) const;
+    Spectrum Sp(const SurfaceInteraction &pi, const Vector3f wi) const; 
+    Spectrum Sample_S(const Scene &scene, Float u1, const Point2f &u2,
+                      MemoryArena &arena, SurfaceInteraction *si,
+                      Float *pdf) const;
+    Spectrum Sample_Sp(const Scene &scene, Float u1, const Point2f &u2,
+                       MemoryArena &arena, SurfaceInteraction *si,
+                       Float *pdf) const;
+    Spectrum Sr(Float distance) const {
+        return Spectrum(0);
+    }
+    Float Sample_Sr(int ch, Float sample) const;
+    Float Pdf_Sr(int ch, Float distance) const;
 
   private:
     // TabulatedBSSRDF Private Data
