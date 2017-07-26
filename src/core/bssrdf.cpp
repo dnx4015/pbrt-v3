@@ -76,7 +76,7 @@ Float getRealDr(Float zb, Float D, Float sigma_t, Float r, Float xw, Float mu){
 }
 
 Float DirectionalMonopole(Vector3f x, Vector3f w, Float r, Normal3f n, 
-                          Float sigma_tr, Float D, Float eta){
+                          Float sigma_tr, Float D, Float eta, bool addT2=true){
     Float fm1 = FresnelMoment1(eta), fm2 = FresnelMoment2(eta);
     Float cPhi = .25f * (1 - 2 * fm1), cE = .5f * (1 - 3 * fm2);
 
@@ -91,7 +91,13 @@ Float DirectionalMonopole(Vector3f x, Vector3f w, Float r, Normal3f n,
     Float t2 = 3 * D * str_r_one * Dot(w, n);
     Float t3 = (str_r_one + 3 * D * (3 * str_r_one + str_r * str_r) 
                / r_sqr * x_dot_w) * Dot(x, n);
-    return t0 * (cPhi * t1 - cE * (t2 - t3));
+
+    Float rad = t0 * cPhi * t1;
+    rad += t0 *cE * t3;
+    if (addT2){
+        rad -= t0 * cE * t2;
+    }
+    return rad;
 }
 
 Float DirectionalDipole(Float sigma_s, Float sigma_a, Float g, Float eta, 
@@ -133,6 +139,10 @@ Float DirectionalDipole(Float sigma_s, Float sigma_a, Float g, Float eta,
                                                  D_g, eta);
     Float negativeMonopole = DirectionalMonopole(xoxv, wv, dv, no, sigma_tr, 
                                                  D_g, eta);
+    /*printf("Positive: %.8f; ", positiveMonopole);
+    printf("Negative: %.8f\n", negativeMonopole);
+    printf("Kappa: %.8f\n", kappa);
+    printf("Rhop: %.8f\n", rhop);*/
     return rhop * kappa * (positiveMonopole - negativeMonopole);    
 }
 
@@ -144,6 +154,7 @@ Float DirectionalMultipole(Float sigma_s, Float sigma_a, Float g, Float eta,
     Float sigma_t = sigma_a + sigma_s;
     Float sigmap_s = sigma_s * (1 - g);
     Float sigmap_t = sigma_a + sigmap_s;
+    Float rhop = sigmap_s / sigmap_t;
 
     // Compute non-classical diffusion coefficient $D_\roman{G}$ using
     // Equation (15.24)
@@ -159,7 +170,7 @@ Float DirectionalMultipole(Float sigma_s, Float sigma_a, Float g, Float eta,
 
     Normal3f ni_ast = xo == xi ? ni : 
         Normal3f(Cross(Normalize(xo-xi), Normalize(Cross(ni, xo-xi))));
-    Vector3f wr = -1.0 * wi;
+    Vector3f wr = -wi;
     Vector3f wv = Reflect(wv, ni_ast);
     
     Point3f xr0 = xi;
@@ -169,24 +180,21 @@ Float DirectionalMultipole(Float sigma_s, Float sigma_a, Float g, Float eta,
  
     int nSamples = 100;
     Float totalRadiance = 0;
-    for(int i = 0; i < nSamples; ++i){
-	    Point3f xr = xr0 + Vector3f((2 * i * (d + 2*zb)) * ni_ast);
-	    Point3f xv = -xr0 + Vector3f((2 * i * (d + 2*zb) - 2 * zb) * ni_ast);
+    for(int i = -nSamples; i < nSamples + 1; ++i){
+	    Point3f xr = xr0 + Vector3f((2 * i * (d + 2 * zb)) * ni_ast);
+	    Point3f xv = -xr0 + Vector3f((2 * i * (d + 2 * zb) - 2 * zb) * ni_ast);
         Vector3f xoxr = xo - xr;
         Vector3f xoxv = xo - xv;
         Float dr = i == 0 ? dr0 : xoxr.Length(); 
         Float dv = xoxv.Length();
-
     	Float posMonopole = DirectionalMonopole(xoxr, wr, dr, no, sigma_tr, D_g,
-                                                eta);
+                                                eta, addT2);
     	Float negMonopole = DirectionalMonopole(xoxv, wv, dv, no, sigma_tr, D_g,
-                                                eta);
+                                                eta, addT2);
        	totalRadiance += (posMonopole - negMonopole); 
     }
-    return totalRadiance;
+    return rhop * totalRadiance;
 }
-
-
 
 Float BeamDiffusionMS(Float sigma_s, Float sigma_a, Float g, Float eta,
                       Float r) {
@@ -277,8 +285,58 @@ Float DirpoleDiffusionMS(Float sigma_s, Float sigma_a, Float g, Float eta,
     return DirectionalDipole(sigma_s, sigma_a, g, eta, xi, xo, wi, ni, no); 
 }
 
+Float MultipoleDiffusionMS(Float sigma_s, Float sigma_a, Float g, Float eta, Float r, 
+        Float d){
+    // Compute reduced scattering coefficients $\sigmaps, \sigmapt$ and albedo
+    // $\rhop$
+    Float sigma_t = sigma_a + sigma_s;
+    Float sigmap_s = sigma_s * (1 - g);
+    Float sigmap_t = sigma_a + sigmap_s;
+    Float rhop = sigmap_s / sigmap_t;
+
+    // Compute non-classical diffusion coefficient $D_\roman{G}$ using
+    // Equation (15.24)
+    Float D_g = (2 * sigma_a + sigmap_s) / (3 * sigmap_t * sigmap_t);
+
+    // Compute effective transport coefficient $\sigmatr$ based on $D_\roman{G}$
+    Float sigma_tr = std::sqrt(sigma_a / D_g);
+
+    // Determine linear extrapolation distance $\depthextrapolation$ using
+    // Equation (15.28)
+    Float fm1 = FresnelMoment1(eta), fm2 = FresnelMoment2(eta);
+    Float zb = 2 * D_g * (1 + 3 * fm2) / (1 - 2 * fm1);
+    Float cPhi = .25f * (1 - 2 * fm1), cE = .5f * (1 - 3 * fm2);
+
+    int nSamples = 100;
+    Float Ed = 0;
+    Float zr0 = 1 / sigmap_t;
+    for(int i = -nSamples; i < nSamples + 1; ++i){
+	    Float zr = zr0 + 2 * i * (d + 2 * zb);
+	    Float zv = -zr0 + 2 * i * (d + 2 * zb) - 2 * zb;
+
+        Float dr = std::sqrt(r*r + zr*zr); 
+        Float dv = std::sqrt(r*r + zv*zv); 
+
+        // Compute dipole fluence rate $\dipole(r)$ using Equation (15.27)
+        Float phiD = Inv4Pi / D_g * (std::exp(-sigma_tr * dr) / dr -
+                                     std::exp(-sigma_tr * dv) / dv);
+
+        // Compute dipole vector irradiance $-\N{}\cdot\dipoleE(r)$ using
+        // Equation (15.27)
+        Float EDn = Inv4Pi * (zr * (1 + sigma_tr * dr) *
+                                  std::exp(-sigma_tr * dr) / (dr * dr * dr) -
+                              zv * (1 + sigma_tr * dv) *
+                                  std::exp(-sigma_tr * dv) / (dv * dv * dv));
+
+        // Add contribution from dipole for depth $\depthreal$ to _Ed_
+        Float E = EDn * cE;
+        Ed += rhop * rhop * EDn;
+    }
+    return Ed;
+}
+
 Float MultidirpoleDiffusionMS(Float sigma_s, Float sigma_a, Float g, Float eta,
-                         Float r) {
+                         Float r, Float d) {
     Point3f xi = Point3f(0.0f, 0.0f, 0.0f);
     Point3f xo = Point3f(1.0f, 0.0f, 0.0f) * r;
 
@@ -286,7 +344,70 @@ Float MultidirpoleDiffusionMS(Float sigma_s, Float sigma_a, Float g, Float eta,
     Normal3f ni = Normal3f(0.0f, 1.0f, 0.0f);
     Normal3f no = Normal3f(0.0f, 1.0f, 0.0f);
 
-    Float d = 0.0005;
+    return DirectionalMultipole(sigma_s, sigma_a, g, eta, xi, xo, wi, ni, no, d); 
+}
+
+Float MultipoleDiffusionTdMS(Float sigma_s, Float sigma_a, Float g, Float eta, Float r, 
+        Float d){
+    // Compute reduced scattering coefficients $\sigmaps, \sigmapt$ and albedo
+    // $\rhop$
+    Float sigma_t = sigma_a + sigma_s;
+    Float sigmap_s = sigma_s * (1 - g);
+    Float sigmap_t = sigma_a + sigmap_s;
+    Float rhop = sigmap_s / sigmap_t;
+
+    // Compute non-classical diffusion coefficient $D_\roman{G}$ using
+    // Equation (15.24)
+    Float D_g = (2 * sigma_a + sigmap_s) / (3 * sigmap_t * sigmap_t);
+
+    // Compute effective transport coefficient $\sigmatr$ based on $D_\roman{G}$
+    Float sigma_tr = std::sqrt(sigma_a / D_g);
+
+    // Determine linear extrapolation distance $\depthextrapolation$ using
+    // Equation (15.28)
+    Float fm1 = FresnelMoment1(eta), fm2 = FresnelMoment2(eta);
+    Float zb = 2 * D_g * (1 + 3 * fm2) / (1 - 2 * fm1);
+    Float cPhi = .25f * (1 - 2 * fm1), cE = .5f * (1 - 3 * fm2);
+
+    int nSamples = 100;
+    Float Ed = 0;
+    Float zr0 = 1 / sigmap_t;
+    for(int i = -nSamples; i < nSamples + 1; ++i){
+	    Float zr = zr0 + 2 * i * (d + 2 * zb);
+	    Float zv = -zr0 + 2 * i * (d + 2 * zb) - 2 * zb;
+
+        zr = d - zr;
+        zv = d - zv;
+
+        Float dr = std::sqrt(r*r + zr*zr); 
+        Float dv = std::sqrt(r*r + zv*zv); 
+
+        // Compute dipole fluence rate $\dipole(r)$ using Equation (15.27)
+        Float phiD = Inv4Pi / D_g * (std::exp(-sigma_tr * dr) / dr -
+                                     std::exp(-sigma_tr * dv) / dv);
+
+        // Compute dipole vector irradiance $-\N{}\cdot\dipoleE(r)$ using
+        // Equation (15.27)
+        Float EDn = Inv4Pi * (zr * (1 + sigma_tr * dr) *
+                                  std::exp(-sigma_tr * dr) / (dr * dr * dr) -
+                              zv * (1 + sigma_tr * dv) *
+                                  std::exp(-sigma_tr * dv) / (dv * dv * dv));
+
+        // Add contribution from dipole for depth $\depthreal$ to _Ed_
+        Float E = EDn;
+        Ed += rhop * rhop * EDn;
+    }
+    return Ed;
+}
+
+Float MultidirpoleDiffusionTdMS(Float sigma_s, Float sigma_a, Float g, Float eta,
+                         Float r, Float d) {
+    Point3f xi = Point3f(0.0f, 0.0f, 0.0f);
+    Point3f xo = Point3f(1.0f, -d, 0.0f) * r;
+
+    Vector3f wi = Vector3f(0.0f, 1.0f, 0.0f);
+    Normal3f ni = Normal3f(0.0f, 1.0f, 0.0f);
+    Normal3f no = Normal3f(0.0f, -1.0f, 0.0f);
 
     return DirectionalMultipole(sigma_s, sigma_a, g, eta, xi, xo, wi, ni, no, d); 
 }
@@ -354,10 +475,10 @@ void ComputeDirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t) {
                                 &t->profile[i * t->nRadiusSamples],
                                 &t->profileCDF[i * t->nRadiusSamples]);
     }, t->nRhoSamples);
-    //t->printTable();
+    t->printTable();
 }
 
-void ComputeMultidirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t) {
+void ComputeMultidirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t, Float d) {
     // Choose radius values of the diffusion profile discretization
     t->radiusSamples[0] = 0;
     t->radiusSamples[1] = 2.5e-3f;
@@ -376,7 +497,7 @@ void ComputeMultidirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t) {
         for (int j = 0; j < t->nRadiusSamples; ++j) {
             Float rho = t->rhoSamples[i], r = t->radiusSamples[j];
             Float ss = BeamDiffusionSS(rho, 1 - rho, g, eta, r); 
-            Float ms = MultidirpoleDiffusionMS(rho, 1 - rho, g, eta, r);
+            Float ms = MultidirpoleDiffusionMS(rho, 1 - rho, g, eta, r, d);
             t->profile[i * t->nRadiusSamples + j] = 2 * Pi * r * (ms + ss); 
         }
 
@@ -387,9 +508,107 @@ void ComputeMultidirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t) {
                                 &t->profile[i * t->nRadiusSamples],
                                 &t->profileCDF[i * t->nRadiusSamples]);
     }, t->nRhoSamples);
-    //t->printTable();
+    t->printTable();
 }
 
+void ComputeMultipoleBSSRDF(Float g, Float eta, BSSRDFTable *t, Float d) {
+    // Choose radius values of the diffusion profile discretization
+    t->radiusSamples[0] = 0;
+    t->radiusSamples[1] = 2.5e-3f;
+    for (int i = 2; i < t->nRadiusSamples; ++i)
+        t->radiusSamples[i] = t->radiusSamples[i - 1] * 1.2f;
+
+    // Choose albedo values of the diffusion profile discretization
+    for (int i = 0; i < t->nRhoSamples; ++i)
+        t->rhoSamples[i] =
+            (1 - std::exp(-8 * i / (Float)(t->nRhoSamples - 1))) /
+            (1 - std::exp(-8));
+    ParallelFor([&](int i) {
+        // Compute the diffusion profile for the _i_th albedo sample
+
+        // Compute scattering profile for chosen albedo $\rho$
+        for (int j = 0; j < t->nRadiusSamples; ++j) {
+            Float rho = t->rhoSamples[i], r = t->radiusSamples[j];
+            Float ss = BeamDiffusionSS(rho, 1 - rho, g, eta, r); 
+            Float ms = MultipoleDiffusionMS(rho, 1 - rho, g, eta, r, d);
+            t->profile[i * t->nRadiusSamples + j] = 2 * Pi * r * (ms + ss); 
+        }
+
+        // Compute effective albedo $\rho_{\roman{eff}}$ and CDF for importance
+        // sampling
+        t->rhoEff[i] =
+            IntegrateCatmullRom(t->nRadiusSamples, t->radiusSamples.get(),
+                                &t->profile[i * t->nRadiusSamples],
+                                &t->profileCDF[i * t->nRadiusSamples]);
+    }, t->nRhoSamples);
+    t->printTable();
+}
+
+void ComputeMultidirpoleBSSRDFTd(Float g, Float eta, BSSRDFTable *t, Float d) {
+    // Choose radius values of the diffusion profile discretization
+    t->radiusSamples[0] = 0;
+    t->radiusSamples[1] = 2.5e-3f;
+    for (int i = 2; i < t->nRadiusSamples; ++i)
+        t->radiusSamples[i] = t->radiusSamples[i - 1] * 1.2f;
+
+    // Choose albedo values of the diffusion profile discretization
+    for (int i = 0; i < t->nRhoSamples; ++i)
+        t->rhoSamples[i] =
+            (1 - std::exp(-8 * i / (Float)(t->nRhoSamples - 1))) /
+            (1 - std::exp(-8));
+    ParallelFor([&](int i) {
+        // Compute the diffusion profile for the _i_th albedo sample
+
+        // Compute scattering profile for chosen albedo $\rho$
+        for (int j = 0; j < t->nRadiusSamples; ++j) {
+            Float rho = t->rhoSamples[i], r = t->radiusSamples[j];
+            Float ss = BeamDiffusionSS(rho, 1 - rho, g, eta, r); 
+            Float ms = MultidirpoleDiffusionTdMS(rho, 1 - rho, g, eta, r, d);
+            t->profile[i * t->nRadiusSamples + j] = 2 * Pi * r * (ms + ss); 
+        }
+
+        // Compute effective albedo $\rho_{\roman{eff}}$ and CDF for importance
+        // sampling
+        t->rhoEff[i] =
+            IntegrateCatmullRom(t->nRadiusSamples, t->radiusSamples.get(),
+                                &t->profile[i * t->nRadiusSamples],
+                                &t->profileCDF[i * t->nRadiusSamples]);
+    }, t->nRhoSamples);
+    t->printTable();
+}
+
+void ComputeMultipoleBSSRDFTd(Float g, Float eta, BSSRDFTable *t, Float d) {
+    // Choose radius values of the diffusion profile discretization
+    t->radiusSamples[0] = 0;
+    t->radiusSamples[1] = 2.5e-3f;
+    for (int i = 2; i < t->nRadiusSamples; ++i)
+        t->radiusSamples[i] = t->radiusSamples[i - 1] * 1.2f;
+
+    // Choose albedo values of the diffusion profile discretization
+    for (int i = 0; i < t->nRhoSamples; ++i)
+        t->rhoSamples[i] =
+            (1 - std::exp(-8 * i / (Float)(t->nRhoSamples - 1))) /
+            (1 - std::exp(-8));
+    ParallelFor([&](int i) {
+        // Compute the diffusion profile for the _i_th albedo sample
+
+        // Compute scattering profile for chosen albedo $\rho$
+        for (int j = 0; j < t->nRadiusSamples; ++j) {
+            Float rho = t->rhoSamples[i], r = t->radiusSamples[j];
+            Float ss = BeamDiffusionSS(rho, 1 - rho, g, eta, r); 
+            Float ms = MultipoleDiffusionTdMS(rho, 1 - rho, g, eta, r, d);
+            t->profile[i * t->nRadiusSamples + j] = 2 * Pi * r * (ms + ss); 
+        }
+
+        // Compute effective albedo $\rho_{\roman{eff}}$ and CDF for importance
+        // sampling
+        t->rhoEff[i] =
+            IntegrateCatmullRom(t->nRadiusSamples, t->radiusSamples.get(),
+                                &t->profile[i * t->nRadiusSamples],
+                                &t->profileCDF[i * t->nRadiusSamples]);
+    }, t->nRhoSamples);
+    t->printTable();
+}
 
 void SubsurfaceFromDiffuse(const BSSRDFTable &t, const Spectrum &rhoEff,
                            const Spectrum &mfp, Spectrum *sigma_a,
@@ -421,9 +640,9 @@ Spectrum TabulatedBSSRDF::Sr(Float r) const {
         // Compute spline weights to interpolate BSSRDF on channel _ch_
         int rhoOffset, radiusOffset;
         Float rhoWeights[4], radiusWeights[4];
-        if (!CatmullRomWeights(table.nRhoSamples, table.rhoSamples.get(),
+        if (!CatmullRomWeights(tableRd.nRhoSamples, tableRd.rhoSamples.get(),
                                rho[ch], &rhoOffset, rhoWeights) ||
-            !CatmullRomWeights(table.nRadiusSamples, table.radiusSamples.get(),
+            !CatmullRomWeights(tableRd.nRadiusSamples, tableRd.radiusSamples.get(),
                                rOptical, &radiusOffset, radiusWeights))
             continue;
 
@@ -434,7 +653,42 @@ Spectrum TabulatedBSSRDF::Sr(Float r) const {
                 Float weight = rhoWeights[i] * radiusWeights[j];
                 if (weight != 0)
                     sr += weight *
-                          table.EvalProfile(rhoOffset + i, radiusOffset + j);
+                          tableRd.EvalProfile(rhoOffset + i, radiusOffset + j);
+            }
+        }
+
+        // Cancel marginal PDF factor from tabulated BSSRDF profile
+        if (rOptical != 0) sr /= 2 * Pi * rOptical;
+        Sr[ch] = sr;
+    }
+    // Transform BSSRDF value into world space units
+    Sr *= sigma_t * sigma_t;
+    return Sr.Clamp();
+}
+
+Spectrum TabulatedBSSRDF::Tr(Float r) const {
+    Spectrum Sr(0.f);
+    for (int ch = 0; ch < Spectrum::nSamples; ++ch) {
+        // Convert $r$ into unitless optical radius $r_{\roman{optical}}$
+        Float rOptical = r * sigma_t[ch];
+
+        // Compute spline weights to interpolate BSSRDF on channel _ch_
+        int rhoOffset, radiusOffset;
+        Float rhoWeights[4], radiusWeights[4];
+        if (!CatmullRomWeights(tableTd.nRhoSamples, tableTd.rhoSamples.get(),
+                               rho[ch], &rhoOffset, rhoWeights) ||
+            !CatmullRomWeights(tableTd.nRadiusSamples, tableTd.radiusSamples.get(),
+                               rOptical, &radiusOffset, radiusWeights))
+            continue;
+
+        // Set BSSRDF value _Sr[ch]_ using tensor spline interpolation
+        Float sr = 0;
+        for (int i = 0; i < 4; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                Float weight = rhoWeights[i] * radiusWeights[j];
+                if (weight != 0)
+                    sr += weight *
+                          tableTd.EvalProfile(rhoOffset + i, radiusOffset + j);
             }
         }
 
@@ -567,9 +821,9 @@ Float SeparableBSSRDF::Pdf_Sp(const SurfaceInteraction &pi) const {
 
 Float TabulatedBSSRDF::Sample_Sr(int ch, Float u) const {
     if (sigma_t[ch] == 0) return -1;
-    return SampleCatmullRom2D(table.nRhoSamples, table.nRadiusSamples,
-                              table.rhoSamples.get(), table.radiusSamples.get(),
-                              table.profile.get(), table.profileCDF.get(),
+    return SampleCatmullRom2D(tableRd.nRhoSamples, tableRd.nRadiusSamples,
+                              tableRd.rhoSamples.get(), tableRd.radiusSamples.get(),
+                              tableRd.profile.get(), tableRd.profileCDF.get(),
                               rho[ch], u) /
            sigma_t[ch];
 }
@@ -581,9 +835,9 @@ Float TabulatedBSSRDF::Pdf_Sr(int ch, Float r) const {
     // Compute spline weights to interpolate BSSRDF density on channel _ch_
     int rhoOffset, radiusOffset;
     Float rhoWeights[4], radiusWeights[4];
-    if (!CatmullRomWeights(table.nRhoSamples, table.rhoSamples.get(), rho[ch],
+    if (!CatmullRomWeights(tableRd.nRhoSamples, tableRd.rhoSamples.get(), rho[ch],
                            &rhoOffset, rhoWeights) ||
-        !CatmullRomWeights(table.nRadiusSamples, table.radiusSamples.get(),
+        !CatmullRomWeights(tableRd.nRadiusSamples, tableRd.radiusSamples.get(),
                            rOptical, &radiusOffset, radiusWeights))
         return 0.f;
 
@@ -591,10 +845,10 @@ Float TabulatedBSSRDF::Pdf_Sr(int ch, Float r) const {
     Float sr = 0, rhoEff = 0;
     for (int i = 0; i < 4; ++i) {
         if (rhoWeights[i] == 0) continue;
-        rhoEff += table.rhoEff[rhoOffset + i] * rhoWeights[i];
+        rhoEff += tableRd.rhoEff[rhoOffset + i] * rhoWeights[i];
         for (int j = 0; j < 4; ++j) {
             if (radiusWeights[j] == 0) continue;
-            sr += table.EvalProfile(rhoOffset + i, radiusOffset + j) *
+            sr += tableRd.EvalProfile(rhoOffset + i, radiusOffset + j) *
                   rhoWeights[i] * radiusWeights[j];
         }
     }
@@ -603,7 +857,7 @@ Float TabulatedBSSRDF::Pdf_Sr(int ch, Float r) const {
     if (rOptical != 0) sr /= 2 * Pi * rOptical;
     return std::max((Float)0, sr * sigma_t[ch] * sigma_t[ch] / rhoEff);
 }
-
+/*
 Spectrum TabulatedSamplingBSSRDF::S(const SurfaceInteraction &pi, 
                                     const Vector3f &wi) const {
     Spectrum Sr(0.f);
@@ -756,8 +1010,6 @@ Float TabulatedSamplingBSSRDF::Pdf_Sr(int ch, Float r) const {
 Spectrum TabulatedSamplingBSSRDF::Sp(const SurfaceInteraction &pi, 
                                const Vector3f wi) const {
     Spectrum Sr(0.f);
-    printf("Sample Sp: pi(%.8f, %.8f, %.8f) ", pi.p.x, pi.p.y, pi.p.z);
-    printf("wi(%.8f, %.8f, %.8f)\n", wi.x, wi.y, wi.z);
     for (int c = 0; c < Spectrum::nSamples; ++c){
         Float rOptical = Distance(po.p, pi.p) * sigma_t[c];
         Point3f pos_i = po.p + Normalize(pi.p - po.p) * rOptical;
@@ -776,14 +1028,16 @@ Spectrum DirectionalBSSRDF::Sp(const SurfaceInteraction &pi) const {
         Point3f xi = po.p + Normalize(pi.p - po.p) * rOptical;
         Point3f xo = po.p;
 
-        Vector3f wi = Vector3f(0.0f, 1.0f, 0.0f);
         Normal3f ni = pi.n;
+        Vector3f wi = Vector3f(ni);
         Normal3f no = po.n;
 
         //Float d = 0.0005;
 
         Float sigma_s = rho[ch];
         Float sigma_a = 1 - rho[ch];
+        printf("Sample Sp: pi(%.8f, %.8f, %.8f) ", pi.p.x, pi.p.y, pi.p.z);
+        printf("wi(%.8f, %.8f, %.8f)\n", wi.x, wi.y, wi.z);
         Float temp = DirectionalDipole(sigma_s, sigma_a, g, eta, 
                                        xi, xo, wi, ni, no); 
         // Float temp = DirectionalMultipole(sigma_s, sigma_a, g, eta, 
@@ -950,6 +1204,7 @@ Float DirectionalBSSRDF::Pdf_Sr(int ch, Float r) const {
     if (rOptical != 0) sr /= 2 * Pi * rOptical;
     return std::max((Float)0, sr * sigma_t[ch] * sigma_t[ch] / rhoEff);
 }
+*/
 
 
 }  // namespace pbrt

@@ -94,7 +94,8 @@ void SubsurfaceMaterial::ComputeScatteringFunctions(
     Spectrum sig_a = scale * sigma_a->Evaluate(*si).Clamp();
     Spectrum sig_s = scale * sigma_s->Evaluate(*si).Clamp();
     si->bssrdf = ARENA_ALLOC(arena, TabulatedBSSRDF)(*si, this, mode, eta,
-                                                     sig_a, sig_s, table);
+                                                     sig_a, sig_s, 
+                                                     tableRd, tableTd);
 }
 
 SubsurfaceMaterial *CreateSubsurfaceMaterial(const TextureParams &mp) {
@@ -102,6 +103,7 @@ SubsurfaceMaterial *CreateSubsurfaceMaterial(const TextureParams &mp) {
           sig_s_rgb[3] = {2.55f, 3.21f, 3.77f};
     Spectrum sig_a = Spectrum::FromRGB(sig_a_rgb),
              sig_s = Spectrum::FromRGB(sig_s_rgb);
+    std::string type = mp.FindString("type");
     std::string name = mp.FindString("name");
     bool found = GetMediumScatteringProperties(name, &sig_a, &sig_s);
     Float g = mp.FindFloat("g", 0.0f);
@@ -115,6 +117,7 @@ SubsurfaceMaterial *CreateSubsurfaceMaterial(const TextureParams &mp) {
     }
     Float scale = mp.FindFloat("scale", 1.f);
     Float eta = mp.FindFloat("eta", 1.33f);
+    Float d = mp.FindFloat("depth", 0.0009f);
 
     std::shared_ptr<Texture<Spectrum>> sigma_a, sigma_s;
     sigma_a = mp.GetSpectrumTexture("sigma_a", sig_a);
@@ -131,7 +134,8 @@ SubsurfaceMaterial *CreateSubsurfaceMaterial(const TextureParams &mp) {
         mp.GetFloatTextureOrNull("bumpmap");
     bool remapRoughness = mp.FindBool("remaproughness", true);
     return new SubsurfaceMaterial(scale, Kr, Kt, sigma_a, sigma_s, g, eta,
-                                  roughu, roughv, bumpMap, remapRoughness);
+                                  roughu, roughv, bumpMap, remapRoughness,
+                                  d, type);
 }
 
 }  // namespace pbrt

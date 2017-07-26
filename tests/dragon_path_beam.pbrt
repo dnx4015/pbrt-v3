@@ -1,6 +1,6 @@
 Integrator "path" "integer maxdepth" [3]
 
-Sampler "halton" "integer pixelsamples" [1024]
+Sampler "halton" "integer pixelsamples" [512]
 
 PixelFilter "gaussian"
 

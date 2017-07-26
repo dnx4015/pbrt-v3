@@ -59,7 +59,9 @@ class SubsurfaceMaterial : public Material {
                        const std::shared_ptr<Texture<Float>> &uRoughness,
                        const std::shared_ptr<Texture<Float>> &vRoughness,
                        const std::shared_ptr<Texture<Float>> &bumpMap,
-                       bool remapRoughness)
+                       bool remapRoughness,
+                       Float d, 
+                       const std::string type)
         : scale(scale),
           Kr(Kr),
           Kt(Kt),
@@ -70,8 +72,21 @@ class SubsurfaceMaterial : public Material {
           bumpMap(bumpMap),
           eta(eta),
           remapRoughness(remapRoughness),
-          table(100, 64) {
-        ComputeBeamDiffusionBSSRDF(g, eta, &table);
+          tableRd(100, 64),
+          tableTd(100, 64) {
+        if (type == "Multidirpole"){
+            ComputeMultidirpoleBSSRDF(g, eta, &tableRd, d);
+            ComputeMultidirpoleBSSRDFTd(g, eta, &tableTd, d);
+        }else if (type == "Multipole"){
+            ComputeMultipoleBSSRDF(g, eta, &tableRd, d);
+            ComputeMultipoleBSSRDFTd(g, eta, &tableTd, d);
+        }else if (type == "Dirpole"){
+            ComputeDirpoleBSSRDF(g, eta, &tableRd);
+            ComputeDirpoleBSSRDF(g, eta, &tableTd);
+        }else{ // Beam
+            ComputeBeamDiffusionBSSRDF(g, eta, &tableRd);
+            ComputeBeamDiffusionBSSRDF(g, eta, &tableTd);
+        }
     }
     void ComputeScatteringFunctions(SurfaceInteraction *si, MemoryArena &arena,
                                     TransportMode mode,
@@ -85,7 +100,8 @@ class SubsurfaceMaterial : public Material {
     std::shared_ptr<Texture<Float>> bumpMap;
     const Float eta;
     const bool remapRoughness;
-    BSSRDFTable table;
+    BSSRDFTable tableRd;
+    BSSRDFTable tableTd;
 };
 
 SubsurfaceMaterial *CreateSubsurfaceMaterial(const TextureParams &mp);

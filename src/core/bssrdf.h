@@ -90,7 +90,10 @@ class SeparableBSSRDF : public BSSRDF {
         return (1 - FrDielectric(CosTheta(w), 1, eta)) / (c * Pi);
     }
     Spectrum Sp(const SurfaceInteraction &pi) const {
-        return Sr(Distance(po.p, pi.p));
+        Spectrum td = Tr(Distance(po.p, pi.p));
+        Spectrum rd = Sr(Distance(po.p, pi.p));
+        return (0.5 * (1 + Dot(po.n, pi.n)) * rd + 
+                0.5 * (1 - Dot(po.n, pi.n)) * td);
     }
     Spectrum Sample_S(const Scene &scene, Float u1, const Point2f &u2,
                       MemoryArena &arena, SurfaceInteraction *si,
@@ -102,6 +105,7 @@ class SeparableBSSRDF : public BSSRDF {
 
     // SeparableBSSRDF Interface
     virtual Spectrum Sr(Float d) const = 0;
+    virtual Spectrum Tr(Float d) const = 0;
     virtual Float Sample_Sr(int ch, Float u) const = 0;
     virtual Float Pdf_Sr(int ch, Float r) const = 0;
 
@@ -113,6 +117,7 @@ class SeparableBSSRDF : public BSSRDF {
     const TransportMode mode;
 };
 
+/*
 class DirectionalBSSRDF : public SeparableBSSRDF {
   public:
     DirectionalBSSRDF(const SurfaceInteraction &po, const Material *material, 
@@ -144,29 +149,34 @@ class DirectionalBSSRDF : public SeparableBSSRDF {
     Spectrum sigma_t, rho;
     Float g;
 };
-
+*/
 
 class TabulatedBSSRDF : public SeparableBSSRDF {
   public:
     // TabulatedBSSRDF Public Methods
     TabulatedBSSRDF(const SurfaceInteraction &po, const Material *material,
                     TransportMode mode, Float eta, const Spectrum &sigma_a,
-                    const Spectrum &sigma_s, const BSSRDFTable &table)
-        : SeparableBSSRDF(po, eta, material, mode), table(table) {
+                    const Spectrum &sigma_s, 
+                    const BSSRDFTable &tableRd, const BSSRDFTable &tableTd)
+        : SeparableBSSRDF(po, eta, material, mode), tableRd(tableRd), 
+        tableTd(tableTd) {
         sigma_t = sigma_a + sigma_s;
         for (int c = 0; c < Spectrum::nSamples; ++c)
             rho[c] = sigma_t[c] != 0 ? (sigma_s[c] / sigma_t[c]) : 0;
     }
     Spectrum Sr(Float distance) const;
+    Spectrum Tr(Float distance) const;
     Float Pdf_Sr(int ch, Float distance) const;
     Float Sample_Sr(int ch, Float sample) const;
 
   private:
     // TabulatedBSSRDF Private Data
-    const BSSRDFTable &table;
+    const BSSRDFTable &tableRd;
+    const BSSRDFTable &tableTd;
     Spectrum sigma_t, rho;
 };
 
+/*
 class TabulatedSamplingBSSRDF : public SeparableBSSRDF {
   public:
     // TabulatedSamplingBSSRDF Public Methods
@@ -201,7 +211,7 @@ class TabulatedSamplingBSSRDF : public SeparableBSSRDF {
     Spectrum sigma_t, rho;
     Float g;
 };
-
+*/
 
 
 struct BSSRDFTable {
@@ -234,11 +244,14 @@ struct BSSRDFTable {
 
         printf("Profile Table:\n");
         for(int i = 0; i < nRhoSamples; i++){
+            printf("rho:%.8f :\n", rhoSamples[i]);
             for(int j = 0;j < nRadiusSamples; j++)
-                printf("%.8f ", profile[i * nRadiusSamples + j]);
+                printf("r %.8f: %.8f\n", radiusSamples[j],
+                        profile[i * nRadiusSamples + j]);
             printf("\n");
         }
 
+        /*
         printf("RhoEff Table:\n");
         for(int i = 0; i < nRadiusSamples; i++)
             printf("%.8f ", rhoEff[i]);
@@ -278,8 +291,14 @@ Float BeamDiffusionSS(Float sigma_s, Float sigma_a, Float g, Float eta,
                       Float r);
 Float BeamDiffusionMS(Float sigma_s, Float sigma_a, Float g, Float eta,
                       Float r);
+Float MultipoleDiffusionMS(Float sigma_s, Float sigma_a, Float g, Float eta,
+                      Float r, Float d);
 void ComputeBeamDiffusionBSSRDF(Float g, Float eta, BSSRDFTable *t);
 void ComputeDirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t);
+void ComputeMultidirpoleBSSRDF(Float g, Float eta, BSSRDFTable *t, Float d);
+void ComputeMultipoleBSSRDF(Float g, Float eta, BSSRDFTable *t, Float d);
+void ComputeMultidirpoleBSSRDFTd(Float g, Float eta, BSSRDFTable *t, Float d);
+void ComputeMultipoleBSSRDFTd(Float g, Float eta, BSSRDFTable *t, Float d);
 void SubsurfaceFromDiffuse(const BSSRDFTable &table, const Spectrum &rhoEff,
                            const Spectrum &mfp, Spectrum *sigma_a,
                            Spectrum *sigma_s);

@@ -70,8 +70,9 @@ class KdSubsurfaceMaterial : public Material {
           bumpMap(bumpMap),
           eta(eta),
           remapRoughness(remapRoughness),
-          table(100, 64) {
-        ComputeBeamDiffusionBSSRDF(g, eta, &table);
+          tableRd(100, 64),
+          tableTd(100, 64){
+        ComputeBeamDiffusionBSSRDF(g, eta, &tableRd);
     }
     void ComputeScatteringFunctions(SurfaceInteraction *si, MemoryArena &arena,
                                     TransportMode mode,
@@ -85,7 +86,8 @@ class KdSubsurfaceMaterial : public Material {
     std::shared_ptr<Texture<Float>> bumpMap;
     Float eta;
     bool remapRoughness;
-    BSSRDFTable table;
+    BSSRDFTable tableRd;
+    BSSRDFTable tableTd;
 };
 
 KdSubsurfaceMaterial *CreateKdSubsurfaceMaterial(const TextureParams &mp);
