@@ -95,7 +95,7 @@ void SubsurfaceMaterial::ComputeScatteringFunctions(
     Spectrum sig_s = scale * sigma_s->Evaluate(*si).Clamp();
     si->bssrdf = ARENA_ALLOC(arena, TabulatedBSSRDF)(*si, this, mode, eta,
                                                      sig_a, sig_s, 
-                                                     tableRd, tableTd);
+                                                     table);
 }
 
 SubsurfaceMaterial *CreateSubsurfaceMaterial(const TextureParams &mp) {

@@ -69,7 +69,7 @@
 #include "materials/fourier.h"
 #include "materials/glass.h"
 #include "materials/hair.h"
-//#include "materials/kdsubsurface.h"
+#include "materials/kdsubsurface.h"
 #include "materials/matte.h"
 #include "materials/metal.h"
 #include "materials/mirror.h"
@@ -450,8 +450,8 @@ std::shared_ptr<Material> MakeMaterial(const std::string &name,
         material = CreateSubsurfaceMaterial(mp);
     else if (name == "subsurfaceDirpole")
         material = CreateSubsurfaceDirpoleMaterial(mp);
-    //else if (name == "kdsubsurface")
-    //    material = CreateKdSubsurfaceMaterial(mp);
+    else if (name == "kdsubsurface")
+        material = CreateKdSubsurfaceMaterial(mp);
     else if (name == "fourier")
         material = CreateFourierMaterial(mp);
     else {
